@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NPM Package Information</title>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    .spinner-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(255, 255, 255, 0.7);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container py-4">
+    <div class="row">
+      <div class="col-12">
+        <h1 class="text-center mb-4">NPM Package Information Lookup</h1>
+        <div class="input-group mb-3">
+          <input type="text" id="packageName" class="form-control" placeholder="Enter package name (e.g. react)">
+          <button id="searchButton" class="btn btn-primary">Search</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="loadingSpinner" class="spinner-overlay" style="display: none;">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+    </div>
+
+    <div id="errorContainer" class="alert alert-danger mt-3" style="display: none;"></div>
+
+    <div id="packageInfo" class="row mt-4" style="display: none;">
+      <div class="col-12">
+        <div class="card">
+          <div class="card-header">
+            <h3 id="packageTitle" class="m-0"></h3>
+          </div>
+          <div class="card-body">
+            <div class="row">
+              <div class="col-md-6">
+                <h5>Package Details</h5>
+                <table class="table table-striped">
+                  <tbody>
+                    <tr>
+                      <th>Latest Version</th>
+                      <td id="latestVersion"></td>
+                    </tr>
+                    <tr>
+                      <th>Description</th>
+                      <td id="packageDescription"></td>
+                    </tr>
+                    <tr>
+                      <th>Homepage</th>
+                      <td><a id="packageHomepage" href="#" target="_blank"></a></td>
+                    </tr>
+                    <tr>
+                      <th>Repository</th>
+                      <td><a id="packageRepository" href="#" target="_blank"></a></td>
+                    </tr>
+                    <tr>
+                      <th>Weekly Downloads</th>
+                      <td id="weeklyDownloads"></td>
+                    </tr>
+                    <tr>
+                      <th>License</th>
+                      <td id="packageLicense"></td>
+                    </tr>
+                    <tr>
+                      <th>Author</th>
+                      <td id="packageAuthor"></td>
+                    </tr>
+                    <tr>
+                      <th>Keywords</th>
+                      <td id="packageKeywords"></td>
+                    </tr>
+                    <tr>
+                      <th>Dependencies</th>
+                      <td id="packageDependencies"></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="col-md-6">
+                <h5>Version History</h5>
+                <div id="versionHistory" class="list-group"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const packageNameInput = document.getElementById('packageName');
+      const searchButton = document.getElementById('searchButton');
+      const packageInfo = document.getElementById('packageInfo');
+      const errorContainer = document.getElementById('errorContainer');
+      const loadingSpinner = document.getElementById('loadingSpinner');
+
+      // UI Elements for package details
+      const packageTitle = document.getElementById('packageTitle');
+      const latestVersion = document.getElementById('latestVersion');
+      const packageDescription = document.getElementById('packageDescription');
+      const packageHomepage = document.getElementById('packageHomepage');
+      const packageRepository = document.getElementById('packageRepository');
+      const weeklyDownloads = document.getElementById('weeklyDownloads');
+      const packageLicense = document.getElementById('packageLicense');
+      const packageAuthor = document.getElementById('packageAuthor');
+      const packageKeywords = document.getElementById('packageKeywords');
+      const packageDependencies = document.getElementById('packageDependencies');
+      const versionHistory = document.getElementById('versionHistory');
+
+      // Reset UI state
+      function resetUI() {
+        packageInfo.style.display = 'none';
+        errorContainer.style.display = 'none';
+        errorContainer.textContent = '';
+        loadingSpinner.style.display = 'none';
+      }
+
+      // Show loading spinner
+      function showLoading() {
+        loadingSpinner.style.display = 'flex';
+      }
+
+      // Display error message
+      function showError(message) {
+        errorContainer.textContent = message;
+        errorContainer.style.display = 'block';
+        packageInfo.style.display = 'none';
+        loadingSpinner.style.display = 'none';
+      }
+
+      // Fetch download statistics
+      async function fetchDownloadStats(packageName) {
+        try {
+          const endDate = new Date().toISOString().split('T')[0];
+          const startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+          const response = await fetch(`https://api.npmjs.org/downloads/range/${startDate}:${endDate}/${packageName}`);
+
+          if (!response.ok) {
+            throw new Error('Download stats not available');
+          }
+
+          return await response.json();
+        } catch (error) {
+          console.error('Download stats error:', error);
+          return null;
+        }
+      }
+
+      // Fetch package information
+      async function fetchPackageInfo(packageName) {
+        resetUI();
+        showLoading();
+
+        try {
+          const [metadataResponse, downloadStats] = await Promise.all([
+            fetch(`https://registry.npmjs.org/${packageName}`),
+            fetchDownloadStats(packageName)
+          ]);
+
+          if (!metadataResponse.ok) {
+            throw new Error('Package not found');
+          }
+
+          const metadata = await metadataResponse.json();
+          const latestVersionData = metadata.versions[metadata['dist-tags'].latest];
+
+          // Populate package details
+          packageTitle.textContent = metadata.name;
+          latestVersion.textContent = metadata['dist-tags'].latest;
+          packageDescription.textContent = metadata.description || 'No description available';
+
+          // Weekly downloads
+          if (downloadStats && downloadStats.downloads) {
+            const weeklyTotal = downloadStats.downloads.reduce((sum, day) => sum + day.downloads, 0);
+            weeklyDownloads.textContent = weeklyTotal.toLocaleString() + ' downloads';
+          } else {
+            weeklyDownloads.textContent = 'N/A';
+          }
+
+          // Homepage link
+          if (metadata.homepage) {
+            packageHomepage.href = metadata.homepage;
+            packageHomepage.textContent = metadata.homepage;
+          } else {
+            packageHomepage.textContent = 'No homepage available';
+          }
+
+          // Repository link
+          if (metadata.repository && metadata.repository.url) {
+            const repoUrl = metadata.repository.url.replace(/^git\+/, '').replace(/\.git$/, '');
+            packageRepository.href = repoUrl;
+            packageRepository.textContent = repoUrl;
+          } else {
+            packageRepository.textContent = 'No repository available';
+          }
+
+          // License
+          packageLicense.textContent = latestVersionData.license || 'No license specified';
+
+          // Author
+          if (metadata.author) {
+            packageAuthor.textContent = typeof metadata.author === 'string'
+              ? metadata.author
+              : `${metadata.author.name}${metadata.author.email ? ` <${metadata.author.email}>` : ''}`;
+          } else {
+            packageAuthor.textContent = 'No author information';
+          }
+
+          // Keywords
+          packageKeywords.textContent = metadata.keywords
+            ? metadata.keywords.slice(0, 10).join(', ')
+            : 'No keywords';
+
+          // Dependencies
+          const deps = latestVersionData.dependencies;
+          if (deps) {
+            const depList = Object.entries(deps)
+              .slice(0, 5)
+              .map(([name, version]) => `${name}@${version}`)
+              .join(', ');
+            packageDependencies.textContent = `${depList}${Object.keys(deps).length > 5 ? '...' : ''}`;
+          } else {
+            packageDependencies.textContent = 'No dependencies';
+          }
+
+          // Version history
+          versionHistory.innerHTML = '';
+          const versionKeys = Object.keys(metadata.versions)
+            .sort((a, b) => {
+              const [majorA, minorA, patchA] = a.split('.').map(Number);
+              const [majorB, minorB, patchB] = b.split('.').map(Number);
+              return (majorB - majorA) || (minorB - minorA) || (patchB - patchA);
+            });
+
+          versionKeys.slice(0, 10).forEach(version => {
+            const versionItem = document.createElement('a');
+            versionItem.href = `https://www.npmjs.com/package/${packageName}/v/${version}`;
+            versionItem.className = 'list-group-item list-group-item-action';
+            versionItem.textContent = version;
+            versionItem.target = '_blank';
+            versionHistory.appendChild(versionItem);
+          });
+
+          // Show package info
+          packageInfo.style.display = 'block';
+          loadingSpinner.style.display = 'none';
+
+        } catch (error) {
+          showError(`Error: ${error.message}. Please check the package name and try again.`);
+        }
+      }
+
+      // Event listener for search button
+      searchButton.addEventListener('click', () => {
+        const packageName = packageNameInput.value.trim();
+        if (packageName) {
+          fetchPackageInfo(packageName);
+        } else {
+          showError('Please enter a package name');
+        }
+      });
+
+      // Allow enter key to trigger search
+      packageNameInput.addEventListener('keypress', (event) => {
+        if (event.key === 'Enter') {
+          searchButton.click();
+        }
+      });
+    });
+  </script>
+</body>
+
+</html>
